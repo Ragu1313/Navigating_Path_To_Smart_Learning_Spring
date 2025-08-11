@@ -1,20 +1,34 @@
-# Use an official OpenJDK 17 image as base
+# ===== Stage 1: Build the app =====
+FROM eclipse-temurin:21-jdk AS builder
 
-FROM eclipse-temurin:17-jdk-alpine
-
-# Set the working directory inside the container
-
+# Set working directory
 WORKDIR /app
 
-# Copy your jar file into the container
-# (Replace target/app.jar with your actual jar path)
+# Copy Maven wrapper and pom.xml first (for better caching)
+COPY pom.xml .
+COPY mvnw .
+COPY .mvn .mvn
 
-COPY target/app.jar app.jar
+# Download dependencies (cached unless pom.xml changes)
+RUN ./mvnw dependency:go-offline
 
-# Expose the port your app runs on (Render uses this to map traffic)
+# Copy source code
+COPY src src
 
+# Package the application (skip tests for faster build)
+RUN ./mvnw clean package -DskipTests
+
+# ===== Stage 2: Run the app =====
+FROM eclipse-temurin:21-jdk-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Copy only the built jar from the builder stage
+COPY --from=builder /app/target/*.jar app.jar
+
+# Expose port (Render will map this to $PORT)
 EXPOSE 8080
 
-# Command to run your application
-
+# Run the application
 ENTRYPOINT ["java", "-jar", "app.jar"]
